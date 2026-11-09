@@ -706,6 +706,77 @@ classdef QCircuit < qclab.QObject & qclab.QAdjustable
       obj.objects_(end) = [];
     end
 
+    % InitializeStateVector
+    function InitializeStateVector(obj, psi, offset, label)
+      %INITIALIZESTATEVECTOR Add a Mottonen state preparation circuit.
+      %
+      %   InitializeStateVector(obj, psi)
+      %   InitializeStateVector(obj, psi, offset)
+      %   InitializeStateVector(obj, psi, offset, label)
+      %
+      %   Appends a circuit preparing the (normalised) state psi, using
+      %   uniformly controlled rotations and CNOTs (Mottonen et al.).
+      %
+      %   psi    - vector of length 2^n
+      %   offset - qubit offset of the circuit (default: 0)
+      %   label  - if given, the circuit is wrapped as a named block
+      if nargin < 3, offset = 0; end
+      circ = qclab.mottonen_state_prep(psi, offset);
+      if nargin == 4, circ.asBlock(label); end
+      obj.push_back(circ);
+    end
+
+    % getGateCount
+    function [gate_count] = getGateCount(obj)
+      % Number of gates in the flattened circuit, barriers excluded.
+      flat = obj.objectsFlattened();
+      gate_count = 0;
+      for i = 1:length(flat)
+        if ~isBarrier(flat(i)), gate_count = gate_count + 1; end
+      end
+    end
+
+    % getControlledStats
+    function [controlled_stats] = getControlledStats(obj)
+      % Struct with the number of gates with a single control (single),
+      % with two or more controls (multi), and their sum (total).
+      flat = obj.objectsFlattened();
+      single = 0;
+      multi  = 0;
+      for i = 1:length(flat)
+        if isBarrier(flat(i)), continue; end
+        n = get_num_controls(flat(i));
+        if n == 1
+          single = single + 1;
+        elseif n >= 2
+          multi = multi + 1;
+        end
+      end
+      controlled_stats = struct('single', single, 'multi', multi, ...
+        'total', single + multi);
+    end
+
+    % getQubitCount
+    function [qubit_count] = getQubitCount(obj)
+      % Number of qubits of the circuit.
+      qubit_count = obj.nbQubits_;
+    end
+
+    % getDepth
+    function [depth] = getDepth(obj)
+      % Circuit depth: every gate counts one layer, barriers are ignored.
+      flat = obj.objectsFlattened();
+      end_time = zeros(1, obj.nbQubits_);
+      for i = 1:length(flat)
+        if isBarrier(flat(i)), continue; end
+        qs = get_gate_qubits(flat(i));
+        if isempty(qs), continue; end
+        idx = qs + 1;   % 0-based to 1-based
+        end_time(idx) = max(end_time(idx)) + 1;
+      end
+      depth = max([end_time, 0]);
+    end
+
     % barrier
     function barrier(obj, visibility)
       % barrier - Add a barrier over all qubits to the end of the circuit.
@@ -1495,3 +1566,34 @@ classdef QCircuit < qclab.QObject & qclab.QAdjustable
     end
   end
 end % class QCircuit
+
+% ======================================================================
+% Local helper functions
+% ======================================================================
+function bool = isBarrier(gate)
+  bool = isa(gate, 'qclab.Barrier') || isa(gate, 'qclab.qgates.Barrier');
+end
+
+function qs = get_gate_qubits(gate)
+  % Qubit indices touched by a gate, as a sorted row vector.
+  if ismethod(gate, 'qubits')
+    qs = gate.qubits;
+  else
+    qs = [];
+    if ismethod(gate, 'qubit'),    qs = [qs, gate.qubit];    end
+    if ismethod(gate, 'target'),   qs = [qs, gate.target];   end
+    if ismethod(gate, 'controls'), qs = [qs, gate.controls]; end
+    if ismethod(gate, 'control'),  qs = [qs, gate.control];  end
+  end
+  qs = unique(reshape(double(qs), 1, []));
+end
+
+function n = get_num_controls(gate)
+  % Number of control qubits of a gate.
+  n = 0;
+  if ismethod(gate, 'controls')
+    n = length(gate.controls);
+  elseif ismethod(gate, 'control')
+    n = length(gate.control);
+  end
+end
