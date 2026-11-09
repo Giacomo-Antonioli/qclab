@@ -157,6 +157,13 @@ classdef IO
       fprintf(fid,'swap q[%d], q[%d];\n', qubits(1), qubits(2));
     end
 
+    % qasmCSWAP
+    function qasmCSWAP( fid, control, target1, target2, controlState )
+      if controlState == 0, fprintf(fid,'x q[%d];\n', control); end
+      fprintf(fid,'cswap q[%d], q[%d], q[%d];\n', control, target1, target2);
+      if controlState == 0, fprintf(fid,'x q[%d];\n', control); end
+    end
+
     % qasmRotationXX
     function qasmRotationXX( fid, qubits, theta )
       fprintf(fid,'rxx(%.15f) q[%d], q[%d];\n', theta, qubits(1), qubits(2) );
